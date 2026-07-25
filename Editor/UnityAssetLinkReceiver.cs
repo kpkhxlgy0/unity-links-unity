@@ -23,6 +23,7 @@ namespace KPK.CodexUnityLink.Editor
         private static readonly ConcurrentQueue<string> PendingErrors = new();
         private static readonly object PipeGate = new();
         private static CancellationTokenSource cancellation;
+        private static Task listenerTask;
         private static NamedPipeServerStream activePipe;
         private static string projectRoot;
 
@@ -38,15 +39,20 @@ namespace KPK.CodexUnityLink.Editor
 
         private static void Start()
         {
-            cancellation = new CancellationTokenSource();
+            var source = new CancellationTokenSource();
+            cancellation = source;
             var pipeName = UnityAssetLinkPath.GetPipeName(projectRoot);
-            _ = Task.Run(() => ListenAsync(pipeName, cancellation.Token));
+            listenerTask = Task.Run(() => ListenAsync(pipeName, source.Token));
         }
 
         private static void Stop()
         {
-            if (cancellation == null) return;
-            cancellation.Cancel();
+            var source = cancellation;
+            var task = listenerTask;
+            if (source == null) return;
+            cancellation = null;
+            listenerTask = null;
+            source.Cancel();
             lock (PipeGate)
             {
                 if (activePipe != null)
@@ -55,8 +61,8 @@ namespace KPK.CodexUnityLink.Editor
                     activePipe = null;
                 }
             }
-            cancellation.Dispose();
-            cancellation = null;
+            task?.GetAwaiter().GetResult();
+            source.Dispose();
             while (PendingRequests.TryDequeue(out var pending))
             {
                 pending.completion.TrySetCanceled();
