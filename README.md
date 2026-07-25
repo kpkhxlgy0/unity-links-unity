@@ -23,7 +23,7 @@ pipe.
 Add the tagged repository to the target project's `Packages/manifest.json`:
 
 ```json
-"com.kpk.codex-unity-link": "https://github.com/kpkhxlgy0/unity-links-unity.git#v0.2.1"
+"com.kpk.codex-unity-link": "https://github.com/kpkhxlgy0/unity-links-unity.git#v0.2.2"
 ```
 
 You can also use **Window → Package Manager → Install package from git URL** with the same URL.
@@ -41,7 +41,7 @@ The umbrella [unity-links](https://github.com/kpkhxlgy0/unity-links) repository 
 
 ## Compatibility
 
-Component version `0.2.1` is tested with `unity-links-codex` version `0.2.1`. The package contains only Editor code and
+Component version `0.2.2` is tested with `unity-links-codex` version `0.2.2`. The package contains only Editor code and
 does not add runtime player assemblies.
 
 ## Validation
