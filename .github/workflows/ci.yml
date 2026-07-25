@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out package
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Run release validator tests
+        run: node --test ./scripts/release/validate-release.test.mjs
+
+      - name: Validate current package metadata
+        run: node ./scripts/release/validate-release.mjs "$GITHUB_WORKSPACE" 0.2.0
+
+      - name: Check diff formatting
+        run: git diff --check
