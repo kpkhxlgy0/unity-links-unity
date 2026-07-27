@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -19,6 +20,10 @@ function writeJson(root, relativePath, value) {
   writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function writeMeta(root, relativePath, guid) {
+  writeFileSync(join(root, relativePath), `fileFormatVersion: 2\nguid: ${guid}\n`);
+}
+
 function fixtureRoot() {
   const root = mkdtempSync(join(tmpdir(), "unity-links-unity-release-"));
   fixtureRoots.push(root);
@@ -29,15 +34,23 @@ function fixtureRoot() {
     licensesUrl: "https://github.com/kpkhxlgy0/unity-links-unity/blob/master/LICENSE",
     unity: "2022.3",
   });
-  writeFileSync(join(root, "package.json.meta"), "fileFormatVersion: 2\n");
+  writeMeta(root, "package.json.meta", "00000000000000000000000000000001");
   writeFileSync(join(root, "LICENSE"), "MIT License\n\nCopyright (c) 2026 KPK\n");
+  writeMeta(root, "LICENSE.meta", "00000000000000000000000000000002");
+  writeFileSync(join(root, "README.md"), "");
+  writeMeta(root, "README.md.meta", "00000000000000000000000000000003");
+  writeFileSync(join(root, "README.zh-CN.md"), "");
+  writeMeta(root, "README.zh-CN.md.meta", "00000000000000000000000000000004");
   mkdirSync(join(root, "Editor/Sub"), { recursive: true });
-  writeFileSync(join(root, "Editor.meta"), "fileFormatVersion: 2\n");
+  writeMeta(root, "Editor.meta", "00000000000000000000000000000005");
   writeFileSync(join(root, "Editor/Foo.cs"), "internal sealed class Foo {}\n");
-  writeFileSync(join(root, "Editor/Foo.cs.meta"), "fileFormatVersion: 2\n");
-  writeFileSync(join(root, "Editor/Sub.meta"), "fileFormatVersion: 2\n");
+  writeMeta(root, "Editor/Foo.cs.meta", "00000000000000000000000000000006");
+  writeMeta(root, "Editor/Sub.meta", "00000000000000000000000000000007");
   writeFileSync(join(root, "Editor/Sub/Bar.asmdef"), "{}\n");
-  writeFileSync(join(root, "Editor/Sub/Bar.asmdef.meta"), "fileFormatVersion: 2\n");
+  writeMeta(root, "Editor/Sub/Bar.asmdef.meta", "00000000000000000000000000000008");
+  mkdirSync(join(root, "scripts~/release"), { recursive: true });
+  writeFileSync(join(root, "scripts~/release/validate-release.mjs"), "");
+  writeFileSync(join(root, "scripts~/release/validate-release.test.mjs"), "");
   return root;
 }
 
@@ -109,4 +122,16 @@ test("rejects missing Unity meta files", () => {
   const missingAsmdefMeta = fixtureRoot();
   rmSync(join(missingAsmdefMeta, "Editor/Sub/Bar.asmdef.meta"));
   assert.throws(() => validateRelease(missingAsmdefMeta, "0.2.0"), /Bar\.asmdef\.meta/);
+});
+
+test("rejects release tooling in a Unity-imported directory", () => {
+  const root = fixtureRoot();
+  renameSync(join(root, "scripts~"), join(root, "scripts"));
+  assert.throws(() => validateRelease(root, "0.2.0"), /scripts~/);
+});
+
+test("rejects non-portable Unity package meta GUIDs", () => {
+  const root = fixtureRoot();
+  writeMeta(root, "README.md.meta", "XHMYvX6kW3OXBKey3GI4hL9GfMNSWHi9xk96yAbRJnzt1YcGEDSw9BU=");
+  assert.throws(() => validateRelease(root, "0.2.0"), /README\.md\.meta.*32.*hexadecimal/);
 });

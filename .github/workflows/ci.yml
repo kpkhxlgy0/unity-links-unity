@@ -21,10 +21,10 @@ jobs:
           package-manager-cache: false
 
       - name: Run release validator tests
-        run: node --test ./scripts/release/validate-release.test.mjs
+        run: node --test ./scripts~/release/validate-release.test.mjs
 
       - name: Validate current package metadata
-        run: node ./scripts/release/validate-release.mjs "$GITHUB_WORKSPACE" 0.2.2
+        run: node ./scripts~/release/validate-release.mjs "$GITHUB_WORKSPACE" 0.2.2
 
       - name: Check diff formatting
         run: git diff --check

@@ -24,9 +24,29 @@ function requirePath(repositoryRoot, relativePath, errors) {
   }
 }
 
+function requirePortableMeta(repositoryRoot, relativePath, errors) {
+  const fullPath = resolve(repositoryRoot, relativePath);
+  if (!existsSync(fullPath)) {
+    errors.push(`${relativePath}: required Unity package file is missing`);
+    return;
+  }
+
+  const guid = readFileSync(fullPath, "utf8").match(/^guid:\s*(\S+)\s*$/m)?.[1];
+  if (!guid || !/^[0-9a-f]{32}$/.test(guid)) {
+    errors.push(`${relativePath}: GUID must be a 32-character lowercase hexadecimal value`);
+  }
+}
+
 function validateMetaCoverage(repositoryRoot, errors) {
-  requirePath(repositoryRoot, "package.json.meta", errors);
-  requirePath(repositoryRoot, "Editor.meta", errors);
+  for (const relativePath of [
+    "package.json.meta",
+    "LICENSE.meta",
+    "README.md.meta",
+    "README.zh-CN.md.meta",
+    "Editor.meta",
+  ]) {
+    requirePortableMeta(repositoryRoot, relativePath, errors);
+  }
   const editorRoot = resolve(repositoryRoot, "Editor");
   if (!existsSync(editorRoot)) {
     errors.push("Editor: required Unity package directory is missing");
@@ -39,15 +59,28 @@ function validateMetaCoverage(repositoryRoot, errors) {
       const fullPath = join(directory, entry.name);
       const relativePath = relative(repositoryRoot, fullPath).replaceAll("\\", "/");
       if (entry.isDirectory()) {
-        requirePath(repositoryRoot, `${relativePath}.meta`, errors);
+        requirePortableMeta(repositoryRoot, `${relativePath}.meta`, errors);
         visit(fullPath);
       } else if ([".cs", ".asmdef"].includes(extname(entry.name))) {
-        requirePath(repositoryRoot, `${relativePath}.meta`, errors);
+        requirePortableMeta(repositoryRoot, `${relativePath}.meta`, errors);
       }
     }
   }
 
   visit(editorRoot);
+}
+
+function validateIgnoredMaintenancePaths(repositoryRoot, errors) {
+  for (const relativePath of [
+    "scripts~/release/validate-release.mjs",
+    "scripts~/release/validate-release.test.mjs",
+  ]) {
+    requirePath(repositoryRoot, relativePath, errors);
+  }
+
+  if (existsSync(resolve(repositoryRoot, "scripts"))) {
+    errors.push("scripts: release tooling must be under scripts~ so Unity does not import it");
+  }
 }
 
 export function validateRelease(repositoryRoot, requestedVersion) {
@@ -84,6 +117,7 @@ export function validateRelease(repositoryRoot, requestedVersion) {
   }
 
   validateMetaCoverage(repositoryRoot, errors);
+  validateIgnoredMaintenancePaths(repositoryRoot, errors);
 
   if (errors.length > 0) throw new Error(errors.join("\n"));
   return { version: requestedVersion, tag: `v${requestedVersion}` };

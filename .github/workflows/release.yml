@@ -41,10 +41,10 @@ jobs:
 
       - name: Validate release metadata
         shell: pwsh
-        run: node ./scripts/release/validate-release.mjs $env:GITHUB_WORKSPACE $env:RELEASE_VERSION
+        run: node ./scripts~/release/validate-release.mjs $env:GITHUB_WORKSPACE $env:RELEASE_VERSION
 
       - name: Run release validator tests
-        run: node --test ./scripts/release/validate-release.test.mjs
+        run: node --test ./scripts~/release/validate-release.test.mjs
 
       - name: Check diff formatting
         run: git diff --check
