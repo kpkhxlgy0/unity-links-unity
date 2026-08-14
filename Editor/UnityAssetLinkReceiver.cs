@@ -19,13 +19,21 @@ namespace KPK.CodexUnityLink.Editor
             internal TaskCompletionSource<string> completion;
         }
 
+        private sealed class AcceptedRequest
+        {
+            internal UnityAssetLinkRequest request;
+            internal string assetPath;
+        }
+
         private static readonly ConcurrentQueue<PendingRequest> PendingRequests = new();
+        private static readonly ConcurrentQueue<AcceptedRequest> PendingOpens = new();
         private static readonly ConcurrentQueue<string> PendingErrors = new();
         private static readonly object PipeGate = new();
         private static CancellationTokenSource cancellation;
         private static Task listenerTask;
         private static NamedPipeServerStream activePipe;
         private static string projectRoot;
+        private static bool openScheduled;
 
         static UnityAssetLinkReceiver()
         {
@@ -53,6 +61,8 @@ namespace KPK.CodexUnityLink.Editor
             cancellation = null;
             listenerTask = null;
             source.Cancel();
+            EditorApplication.delayCall -= ProcessPendingOpens;
+            openScheduled = false;
             lock (PipeGate)
             {
                 if (activePipe != null)
@@ -66,6 +76,9 @@ namespace KPK.CodexUnityLink.Editor
             while (PendingRequests.TryDequeue(out var pending))
             {
                 pending.completion.TrySetCanceled();
+            }
+            while (PendingOpens.TryDequeue(out _))
+            {
             }
             while (PendingErrors.TryDequeue(out _))
             {
@@ -182,7 +195,9 @@ namespace KPK.CodexUnityLink.Editor
             {
                 try
                 {
-                    pending.completion.TrySetResult(ProcessRequest(pending.json));
+                    var response = AcceptRequest(pending.json, out var accepted);
+                    pending.completion.TrySetResult(response);
+                    if (accepted != null) PendingOpens.Enqueue(accepted);
                 }
                 catch (Exception exception)
                 {
@@ -193,15 +208,54 @@ namespace KPK.CodexUnityLink.Editor
                     pending.completion.TrySetResult(SerializeFailure(response));
                 }
             }
+            if (!PendingOpens.IsEmpty && !openScheduled)
+            {
+                openScheduled = true;
+                EditorApplication.delayCall += ProcessPendingOpens;
+            }
         }
 
-        private static string ProcessRequest(string json)
+        private static string AcceptRequest(string json, out AcceptedRequest accepted)
         {
+            accepted = null;
             if (!UnityAssetLinkProtocol.TryParse(json, out var request, out var error))
                 return SerializeFailure(error);
             if (!UnityAssetLinkPath.TryResolveAsset(projectRoot, request, out var assetPath, out error))
                 return SerializeFailure(error);
 
+            accepted = new AcceptedRequest
+            {
+                request = request,
+                assetPath = assetPath
+            };
+            return UnityAssetLinkProtocol.Serialize(
+                UnityAssetLinkProtocol.Accepted(request.requestId));
+        }
+
+        private static void ProcessPendingOpens()
+        {
+            EditorApplication.delayCall -= ProcessPendingOpens;
+            openScheduled = false;
+            while (PendingOpens.TryDequeue(out var accepted))
+            {
+                try
+                {
+                    OpenAcceptedRequest(accepted);
+                }
+                catch (Exception exception)
+                {
+                    SerializeFailure(UnityAssetLinkProtocol.Failure(
+                        accepted.request.requestId,
+                        "openFailed",
+                        exception.Message));
+                }
+            }
+        }
+
+        private static void OpenAcceptedRequest(AcceptedRequest accepted)
+        {
+            var request = accepted.request;
+            var assetPath = accepted.assetPath;
             bool opened;
             if (assetPath.StartsWith("ProjectSettings/", StringComparison.Ordinal))
             {
@@ -216,25 +270,24 @@ namespace KPK.CodexUnityLink.Editor
                 var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(assetPath);
                 if (asset == null)
                 {
-                    error = UnityAssetLinkProtocol.Failure(
+                    var error = UnityAssetLinkProtocol.Failure(
                         request.requestId,
                         "assetMissing",
                         "Unity could not load the requested asset.");
-                    return SerializeFailure(error);
+                    SerializeFailure(error);
+                    return;
                 }
                 opened = OpenAsset(asset, request.line, request.column);
             }
 
             if (!opened)
             {
-                error = UnityAssetLinkProtocol.Failure(
+                var error = UnityAssetLinkProtocol.Failure(
                     request.requestId,
                     "openFailed",
                     "Unity did not accept the link open request.");
-                return SerializeFailure(error);
+                SerializeFailure(error);
             }
-            return UnityAssetLinkProtocol.Serialize(
-                UnityAssetLinkProtocol.Success(request.requestId));
         }
 
         private static bool OpenProjectSettings()
