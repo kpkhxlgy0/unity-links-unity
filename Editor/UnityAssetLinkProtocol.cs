@@ -69,14 +69,14 @@ namespace KPK.CodexUnityLink.Editor
             return true;
         }
 
-        internal static UnityAssetLinkResponse Success(string requestId)
+        internal static UnityAssetLinkResponse Accepted(string requestId)
         {
             return new UnityAssetLinkResponse
             {
                 version = Version,
                 requestId = requestId,
                 ok = true,
-                code = "opened",
+                code = "accepted",
                 message = string.Empty
             };
         }
