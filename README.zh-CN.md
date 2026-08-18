@@ -22,7 +22,7 @@
 在目标项目的 `Packages/manifest.json` 中添加带标签的仓库：
 
 ```json
-"com.kpk.codex-unity-link": "https://github.com/kpkhxlgy0/unity-links-unity.git#v0.2.4"
+"com.kpk.codex-unity-link": "https://github.com/kpkhxlgy0/unity-links-unity.git#v0.2.5"
 ```
 
 也可以在 **Window → Package Manager → Install package from git URL** 中输入相同 URL。
@@ -40,7 +40,7 @@
 
 ## 兼容性
 
-组件版本 `0.2.4` 与 `unity-links-codex` 版本 `0.2.2` 配套验证。本包只包含 Editor 代码，不会增加运行时
+组件版本 `0.2.5` 与 `unity-links-codex` 版本 `0.2.2` 配套验证。本包只包含 Editor 代码，不会增加运行时
 Player assembly。
 
 ## 验证

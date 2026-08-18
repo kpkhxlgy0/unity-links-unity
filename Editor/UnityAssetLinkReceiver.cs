@@ -17,12 +17,14 @@ namespace KPK.CodexUnityLink.Editor
         {
             internal string json;
             internal TaskCompletionSource<string> completion;
+            internal TaskCompletionSource<bool> responseWritten;
         }
 
         private sealed class AcceptedRequest
         {
             internal UnityAssetLinkRequest request;
             internal string assetPath;
+            internal Task<bool> responseWritten;
         }
 
         private static readonly ConcurrentQueue<PendingRequest> PendingRequests = new();
@@ -33,7 +35,6 @@ namespace KPK.CodexUnityLink.Editor
         private static Task listenerTask;
         private static NamedPipeServerStream activePipe;
         private static string projectRoot;
-        private static bool openScheduled;
 
         static UnityAssetLinkReceiver()
         {
@@ -61,8 +62,6 @@ namespace KPK.CodexUnityLink.Editor
             cancellation = null;
             listenerTask = null;
             source.Cancel();
-            EditorApplication.delayCall -= ProcessPendingOpens;
-            openScheduled = false;
             lock (PipeGate)
             {
                 if (activePipe != null)
@@ -172,15 +171,28 @@ namespace KPK.CodexUnityLink.Editor
                 if (json == null) return;
                 var completion = new TaskCompletionSource<string>(
                     TaskCreationOptions.RunContinuationsAsynchronously);
-                PendingRequests.Enqueue(new PendingRequest
+                var pending = new PendingRequest
                 {
                     json = json,
-                    completion = completion
-                });
+                    completion = completion,
+                    responseWritten = new TaskCompletionSource<bool>(
+                        TaskCreationOptions.RunContinuationsAsynchronously)
+                };
+                PendingRequests.Enqueue(pending);
                 using (token.Register(() => completion.TrySetCanceled()))
                 {
-                    var response = await completion.Task;
-                    await writer.WriteLineAsync(response);
+                    try
+                    {
+                        var response = await completion.Task;
+                        await writer.WriteLineAsync(response);
+                        await writer.FlushAsync();
+                        pending.responseWritten.TrySetResult(true);
+                    }
+                    catch
+                    {
+                        pending.responseWritten.TrySetResult(false);
+                        throw;
+                    }
                 }
             }
         }
@@ -197,7 +209,11 @@ namespace KPK.CodexUnityLink.Editor
                 {
                     var response = AcceptRequest(pending.json, out var accepted);
                     pending.completion.TrySetResult(response);
-                    if (accepted != null) PendingOpens.Enqueue(accepted);
+                    if (accepted != null)
+                    {
+                        accepted.responseWritten = pending.responseWritten.Task;
+                        PendingOpens.Enqueue(accepted);
+                    }
                 }
                 catch (Exception exception)
                 {
@@ -208,11 +224,8 @@ namespace KPK.CodexUnityLink.Editor
                     pending.completion.TrySetResult(SerializeFailure(response));
                 }
             }
-            if (!PendingOpens.IsEmpty && !openScheduled)
-            {
-                openScheduled = true;
-                EditorApplication.delayCall += ProcessPendingOpens;
-            }
+            ProcessPendingOpens();
+            if (!PendingOpens.IsEmpty) EditorApplication.QueuePlayerLoopUpdate();
         }
 
         private static string AcceptRequest(string json, out AcceptedRequest accepted)
@@ -234,10 +247,16 @@ namespace KPK.CodexUnityLink.Editor
 
         private static void ProcessPendingOpens()
         {
-            EditorApplication.delayCall -= ProcessPendingOpens;
-            openScheduled = false;
-            while (PendingOpens.TryDequeue(out var accepted))
+            var pendingCount = PendingOpens.Count;
+            for (var index = 0; index < pendingCount; index++)
             {
+                if (!PendingOpens.TryDequeue(out var accepted)) return;
+                if (!accepted.responseWritten.IsCompleted)
+                {
+                    PendingOpens.Enqueue(accepted);
+                    continue;
+                }
+                if (!accepted.responseWritten.Result) continue;
                 try
                 {
                     OpenAcceptedRequest(accepted);

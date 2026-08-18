@@ -119,6 +119,10 @@ namespace UnityEditor
             delayCall = null;
             callback?.Invoke();
         }
+
+        internal static void QueuePlayerLoopUpdate()
+        {
+        }
     }
 
     internal static class AssemblyReloadEvents

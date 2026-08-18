@@ -84,7 +84,7 @@ internal static class ReceiverReloadRegression
             BindingFlags.NonPublic | BindingFlags.Static);
         AssetDatabase.ResetOpenGate();
         Task updateTask = null;
-        Task delayedTask = null;
+        Task openTask = null;
         try
         {
             using (var pipe = new NamedPipeClientStream(
@@ -139,16 +139,24 @@ internal static class ReceiverReloadRegression
                         return false;
                     }
 
-                    delayedTask = Task.Run(() => EditorApplication.RaiseDelayCall());
+                    openTask = Task.Run(() =>
+                    {
+                        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+                        while (DateTime.UtcNow < deadline && !AssetDatabase.OpenStarted.IsSet)
+                        {
+                            EditorApplication.RaiseUpdate();
+                            Thread.Sleep(1);
+                        }
+                    });
                     if (!AssetDatabase.OpenStarted.Wait(500))
                     {
-                        Console.Error.WriteLine("FAIL: accepted asset was not opened on the delayed main-thread pass.");
+                        Console.Error.WriteLine("FAIL: accepted asset was not opened on the next main-thread update.");
                         return false;
                     }
                     AssetDatabase.ReleaseOpen();
-                    if (!delayedTask.Wait(2000))
+                    if (!openTask.Wait(2000))
                     {
-                        Console.Error.WriteLine("FAIL: delayed asset open did not complete.");
+                        Console.Error.WriteLine("FAIL: asset open did not complete on the next main-thread update.");
                         return false;
                     }
                 }
@@ -158,7 +166,7 @@ internal static class ReceiverReloadRegression
         {
             AssetDatabase.ReleaseOpen();
             updateTask?.Wait(2000);
-            delayedTask?.Wait(2000);
+            openTask?.Wait(2000);
         }
         Console.WriteLine("PASS: receiver acknowledges before a slow Unity asset open.");
         return true;
